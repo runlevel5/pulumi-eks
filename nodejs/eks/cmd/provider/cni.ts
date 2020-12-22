@@ -35,6 +35,8 @@ interface VpcCniInputs {
     vethPrefix?: string;
     eniMtu?: number;
     eniConfigLabelDef?: string;
+    pluginLogLevel?: string;
+    pluginLogFile?: string;
 }
 
 function computeVpcCniYaml(cniYamlText: string, args: VpcCniInputs): string {
@@ -83,6 +85,16 @@ function computeVpcCniYaml(cniYamlText: string, args: VpcCniInputs): string {
     }
     if (args.eniConfigLabelDef) {
         env.push({name: "ENI_CONFIG_LABEL_DEF", value: args.eniConfigLabelDef.toString()});
+    }
+    if (args.pluginLogLevel) {
+        env.push({name: "AWS_VPC_K8S_PLUGIN_LOG_LEVEL", value: args.pluginLogLevel.toString()});
+    } else {
+        env.push({name: "AWS_VPC_K8S_PLUGIN_LOG_LEVEL", value: "DEBUG"});
+    }
+    if (args.pluginLogFile) {
+        env.push({name: "AWS_VPC_K8S_PLUGIN_LOG_FILE", value: args.pluginLogFile.toString()});
+    } else {
+        env.push({name: "AWS_VPC_K8S_PLUGIN_LOG_FILE", value: "stdout"});
     }
     // Return the computed YAML.
     return cniYaml.map(o => `---\n${jsyaml.safeDump(o)}`).join("");
