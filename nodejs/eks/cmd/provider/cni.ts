@@ -37,57 +37,6 @@ interface VpcCniInputs {
     eniConfigLabelDef?: string;
 }
 
-function computeVpcCniYaml(cniYamlText: string, args: VpcCniInputs): string {
-    const cniYaml = jsyaml.safeLoadAll(cniYamlText);
-
-    // Rewrite the envvars for the CNI daemon set as per the inputs.
-    const daemonSet = cniYaml.filter(o => o.kind === "DaemonSet")[0];
-    const env = daemonSet.spec.template.spec.containers[0].env;
-    if (args.nodePortSupport) {
-        env.push({name: "AWS_VPC_CNI_NODE_PORT_SUPPORT", value: args.nodePortSupport ? "true" : "false"});
-    }
-    if (args.customNetworkConfig) {
-        env.push({name: "AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG", value: args.customNetworkConfig ? "true" : "false"});
-    }
-    if (args.externalSnat) {
-        env.push({name: "AWS_VPC_K8S_CNI_EXTERNALSNAT", value: args.externalSnat ? "true" : "false"});
-    }
-    if (args.warmEniTarget) {
-        env.push({name: "WARM_ENI_TARGET", value: args.warmEniTarget.toString()});
-    }
-    if (args.warmIpTarget) {
-        env.push({name: "WARM_IP_TARGET", value: args.warmIpTarget.toString()});
-    }
-    if (args.logLevel) {
-        env.push({name: "AWS_VPC_K8S_CNI_LOGLEVEL", value: args.logLevel.toString()});
-    } else {
-        env.push({name: "AWS_VPC_K8S_CNI_LOGLEVEL", value: "DEBUG"});
-    }
-    if (args.logFile) {
-        env.push({name: "AWS_VPC_K8S_CNI_LOG_FILE", value: args.logFile.toString()});
-    } else {
-        env.push({name: "AWS_VPC_K8S_CNI_LOG_FILE", value: "stdout"});
-    }
-    if (args.vethPrefix) {
-        env.push({name: "AWS_VPC_K8S_CNI_VETHPREFIX", value: args.vethPrefix.toString()});
-    } else {
-        env.push({name: "AWS_VPC_K8S_CNI_VETHPREFIX", value: "eni"});
-    }
-    if (args.eniMtu) {
-        env.push({name: "AWS_VPC_ENI_MTU", value: args.eniMtu.toString()});
-    } else {
-        env.push({name: "AWS_VPC_ENI_MTU", value: "9001"});
-    }
-    if (args.image) {
-        daemonSet.spec.template.spec.containers[0].image = args.image.toString();
-    }
-    if (args.eniConfigLabelDef) {
-        env.push({name: "ENI_CONFIG_LABEL_DEF", value: args.eniConfigLabelDef.toString()});
-    }
-    // Return the computed YAML.
-    return cniYaml.map(o => `---\n${jsyaml.safeDump(o)}`).join("");
-}
-
 function applyVpcCniYaml(args: VpcCniInputs) {
     // Check to ensure that kubectl is installed, as we'll need it in order to deploy k8s resources below.
     try {
@@ -96,8 +45,7 @@ function applyVpcCniYaml(args: VpcCniInputs) {
         throw new Error("Could not set VPC CNI options: kubectl is missing. See https://kubernetes.io/docs/tasks/tools/install-kubectl/#install-kubectl for installation instructions.");
     }
 
-    const yamlPath = path.join(__dirname, "..", "..", "cni", "aws-k8s-cni.yaml");
-    const cniYamlText = fs.readFileSync(yamlPath).toString();
+    const yamlPath = path.join(__dirname, "..", "..", "cni", "calico-vxlan.yaml");
 
     const kubeconfig: string = typeof args.kubeconfig === "string"
         ? args.kubeconfig
@@ -107,12 +55,8 @@ function applyVpcCniYaml(args: VpcCniInputs) {
     const tmpKubeconfig = tmp.fileSync();
     fs.writeFileSync(tmpKubeconfig.fd, kubeconfig);
 
-    // Compute the required CNI YAML and dump it to a file.
-    const tmpYaml = tmp.fileSync();
-    fs.writeFileSync(tmpYaml.fd, computeVpcCniYaml(cniYamlText, args));
-
     // Call kubectl to apply the YAML.
-    childProcess.execSync(`kubectl apply -f ${tmpYaml.name}`, {
+    childProcess.execSync(`kubectl apply -f ${yamlPath}`, {
         env: { ...process.env, "KUBECONFIG": tmpKubeconfig.name },
     });
 }
